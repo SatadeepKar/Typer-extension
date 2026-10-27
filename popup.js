@@ -4,6 +4,7 @@ const wpmEl = $("wpm");
 const wpmRangeEl = $("wpmRange");
 const delayEl = $("delay");
 const humanizeEl = $("humanize");
+const typosEl = $("typos");
 const startBtn = $("start");
 const stopBtn = $("stop");
 const statusEl = $("status");
@@ -44,6 +45,7 @@ function saveSettings() {
     wpm: getWpm(),
     delay: Number(delayEl.value) || 0,
     humanize: humanizeEl.checked,
+    typos: typosEl.checked,
   });
 }
 
@@ -73,6 +75,7 @@ wpmEl.addEventListener("input", () => {
 textEl.addEventListener("input", () => { updateMeta(); saveSettings(); });
 delayEl.addEventListener("input", saveSettings);
 humanizeEl.addEventListener("change", saveSettings);
+typosEl.addEventListener("change", saveSettings);
 
 startBtn.addEventListener("click", async () => {
   const text = textEl.value;
@@ -95,6 +98,7 @@ startBtn.addEventListener("click", async () => {
     wpm: getWpm(),
     delay,
     humanize: humanizeEl.checked,
+    typos: typosEl.checked,
   }).catch(() => {});
   setRunning(true);
   setStatus(`Starting in ${delay}s — click into the text field now. You can stop from the on-page badge.`);
@@ -111,12 +115,13 @@ stopBtn.addEventListener("click", async () => {
 
 // --- init ---
 (async () => {
-  const s = await chrome.storage.local.get({ text: "", wpm: 60, delay: 3, humanize: true });
+  const s = await chrome.storage.local.get({ text: "", wpm: 60, delay: 3, humanize: true, typos: true });
   textEl.value = s.text;
   wpmEl.value = s.wpm;
   wpmRangeEl.value = Math.min(s.wpm, Number(wpmRangeEl.max));
   delayEl.value = s.delay;
   humanizeEl.checked = s.humanize;
+  typosEl.checked = s.typos;
   updateMeta();
 
   // Ask the page whether a typing session is already in progress.

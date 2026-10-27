@@ -24,6 +24,7 @@ Your paragraph and settings are saved between uses.
 
 - WPM uses the standard definition of 5 characters = 1 word.
 - **Human-like rhythm** varies the time between keystrokes. The average speed still matches the WPM you set.
+- **Occasional typos**: every 20–25 characters it types 2–6 wrong keys (keys next to the right ones on a QWERTY keyboard). It pauses briefly as if noticing, backspaces them, and carries on. The typing speeds up a little to make up for the extra keystrokes, so the finished text still arrives at the WPM you set. Untick it to type with no mistakes.
 - It works with `<textarea>`, text-type `<input>` fields, and rich-text (contenteditable) editors such as Gmail, Notion, and most chat boxes, including editors inside iframes.
 - Single-line inputs can't hold line breaks, so newlines are typed as spaces there.
 - Chrome blocks extensions from `chrome://` pages and the Chrome Web Store.

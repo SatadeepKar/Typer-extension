@@ -7,7 +7,7 @@
   const CHARS_PER_WORD = 5; // standard WPM definition
   const isTop = window === window.top;
 
-  let session = null; // { phase: "countdown" | "typing", chars, index, target, timer }
+  let session = null; // { phase: "countdown" | "typing", plan, index, target, timer }
 
   // ---------- helpers ----------
 
@@ -72,6 +72,69 @@
     }
   }
 
+  function backspace(target) {
+    if (document.execCommand("delete")) return;
+
+    // Fallbacks if execCommand is unavailable.
+    if (!target.isContentEditable) {
+      try {
+        const start = target.selectionStart ?? target.value.length;
+        const end = target.selectionEnd ?? target.value.length;
+        if (start === end && start > 0) target.setRangeText("", start - 1, end, "end");
+        else target.setRangeText("", start, end, "end");
+      } catch {
+        target.value = Array.from(target.value).slice(0, -1).join("");
+      }
+    } else {
+      const sel = window.getSelection();
+      if (sel.isCollapsed) sel.modify("extend", "backward", "character");
+      sel.deleteFromDocument();
+    }
+    target.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "deleteContentBackward" }));
+  }
+
+  // ---------- typo planning ----------
+
+  // Neighbouring keys on a QWERTY keyboard, used to make believable mistakes.
+  const NEIGHBOURS = {
+    q: "wa", w: "qeas", e: "wrsd", r: "etdf", t: "ryfg", y: "tugh", u: "yihj", i: "uojk", o: "ipkl", p: "ol",
+    a: "qwsz", s: "awedxz", d: "serfcx", f: "drtgvc", g: "ftyhbv", h: "gyujnb", j: "huikmn", k: "jiolm", l: "kop",
+    z: "asx", x: "zsdc", c: "xdfv", v: "cfgb", b: "vghn", n: "bhjm", m: "njk",
+  };
+  const randInt = (min, max) => min + Math.floor(Math.random() * (max - min + 1));
+
+  function wrongKeyFor(ch) {
+    const lower = ch.toLowerCase();
+    const options = NEIGHBOURS[lower];
+    if (!options) return "abcdefghijklmnopqrstuvwxyz"[randInt(0, 25)];
+    const wrong = options[randInt(0, options.length - 1)];
+    return ch === lower ? wrong : wrong.toUpperCase();
+  }
+
+  // Turns the text into a list of keystrokes. With typos on, every 20-25
+  // correct characters it types 2-6 wrong keys, pauses as if noticing the
+  // mistake, then backspaces them before carrying on.
+  function planKeystrokes(chars, typos) {
+    const plan = [];
+    let nextTypoAt = randInt(20, 25);
+    for (let i = 0; i < chars.length; i++) {
+      if (typos && i === nextTypoAt && chars[i] !== "\n" && chars[i] !== "\r") {
+        const count = randInt(2, 6);
+        for (let k = 0; k < count; k++) {
+          const intended = chars[i + k] && !/\s/.test(chars[i + k]) ? chars[i + k] : "";
+          plan.push({ key: wrongKeyFor(intended), weight: 1 });
+        }
+        for (let k = 0; k < count; k++) plan.push({ key: "Backspace", weight: k === 0 ? 4 : 0.8 });
+        plan.push({ key: chars[i], weight: 1.5 }); // a beat before retyping
+        nextTypoAt = i + randInt(20, 25);
+        continue;
+      }
+      if (typos && i === nextTypoAt) nextTypoAt++; // don't start a typo on a line break
+      plan.push({ key: chars[i], weight: 1 });
+    }
+    return plan;
+  }
+
   // ---------- on-page badge ----------
 
   let badgeHost = null;
@@ -125,11 +188,15 @@
     hideBadge(message);
   }
 
-  function start({ text, wpm, delay, humanize }) {
+  function start({ text, wpm, delay, humanize, typos }) {
     stop();
     const chars = Array.from(text); // code points, so emoji aren't split
-    const interval = 60000 / (wpm * CHARS_PER_WORD);
-    session = { phase: "countdown", chars, index: 0, target: null, timer: null };
+    const plan = planKeystrokes(chars, typos);
+    // Spread the time for the text itself over every keystroke (typos and
+    // backspaces included), so the finished text still arrives at the chosen WPM.
+    const totalMs = (chars.length / (wpm * CHARS_PER_WORD)) * 60000;
+    const interval = totalMs / plan.reduce((sum, k) => sum + k.weight, 0);
+    session = { phase: "countdown", plan, index: 0, target: null, timer: null };
     const s = session;
 
     let remaining = Math.max(0, Math.round(delay));
@@ -177,18 +244,20 @@
         stop("Stopped: focus left the text field.");
         return;
       }
-      insertChar(target, s.chars[s.index]);
+      const { key } = s.plan[s.index];
+      if (key === "Backspace") backspace(target);
+      else insertChar(target, key);
       s.index++;
-      if (s.index >= s.chars.length) {
+      if (s.index >= s.plan.length) {
         stop("Done typing ✓");
         return;
       }
-      const pct = Math.floor((s.index / s.chars.length) * 100);
+      const pct = Math.floor((s.index / s.plan.length) * 100);
       showBadge(`Auto Typer: typing… ${pct}%`);
 
       // Jitter averages to 1, so the overall speed still matches the chosen WPM.
       const factor = humanize ? 0.5 + Math.random() : 1;
-      next += interval * factor;
+      next += interval * s.plan[s.index].weight * factor;
       const now = performance.now();
       if (now - next > 500) next = now; // fell far behind (e.g. throttled); don't burst
       s.timer = setTimeout(step, Math.max(0, next - now));
@@ -206,7 +275,7 @@
       if (session && (session.phase === "typing" || isTop)) {
         sendResponse({
           running: true,
-          progress: session.chars.length ? Math.floor((session.index / session.chars.length) * 100) : 0,
+          progress: session.plan.length ? Math.floor((session.index / session.plan.length) * 100) : 0,
         });
       }
     }
